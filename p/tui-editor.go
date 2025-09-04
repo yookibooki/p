@@ -127,5 +127,5 @@ func RunTUIEditor(initialContent string) (string, error) {
 		return m.ta.Value(), nil
 	}
 
-	return initialContent, nil // This case should ideally not be reached if the editor exits cleanly after user input.
+	return initialContent, nil
 }

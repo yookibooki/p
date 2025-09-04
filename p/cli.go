@@ -163,8 +163,6 @@ var EditCmd = &cobra.Command{
 func init() {
 	EditCmd.Flags().StringP("tags", "t", "", "New tags for the prompt (comma-separated)")
 	EditCmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
-	// Remove the old --prompt flag as it's no longer needed
-	// EditCmd.Flags().StringP("prompt", "p", "", "New prompt text")
 }
 
 // list
