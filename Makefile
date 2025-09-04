@@ -65,8 +65,9 @@ test: check-tools ## Run tests with coverage report
 	@$(GO) tool cover -func=coverage.out
 
 ## Ensure go.mod and go.sum are tidy
-tidy: check-tools ## Run go mod tidy
+tidy: check-tools ## Run go mod tidy and verify
 	@$(GO) mod tidy || { echo "Error: go mod tidy failed"; exit 1; }
+	@$(GO) mod verify || { echo "Error: go mod verify failed"; exit 1; }
 
 ## Build binary into $(BIN_DIR)
 build: check-tools ## Build binary with version info
@@ -80,7 +81,7 @@ release: fmt vet lint test tidy build ## Full safe build
 check: fmt vet lint test tidy ## Run all checks without building
 
 ## Install binary to $(INSTALL_DIR)
-install: release ## Install binary to $(INSTALL_DIR)
+install: check-tools release ## Install binary to $(INSTALL_DIR)
 	@mkdir -p $(INSTALL_DIR)
 	@cp -f $(BIN_DIR)/$(BINARY) $(INSTALL_DIR)/ || { echo "Error: installation failed"; exit 1; }
 	@echo "Installed $(BINARY) to $(INSTALL_DIR)"

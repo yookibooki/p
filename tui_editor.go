@@ -12,6 +12,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// LaunchExternalEditor opens the user's preferred editor (from $EDITOR or defaults to vim/nano)
+// with the given initial content and returns the edited content.
 func LaunchExternalEditor(initialContent string) (string, error) {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
@@ -57,11 +59,13 @@ func LaunchExternalEditor(initialContent string) (string, error) {
 	return strings.TrimSpace(string(editedContentBytes)), nil
 }
 
+// editorModel represents the TUI editor state with a textarea and quit flag.
 type editorModel struct {
 	ta       ta.Model
 	quitting bool
 }
 
+// initialEditorModel creates a new editor model with the given initial content.
 func initialEditorModel(initialContent string) editorModel {
 	txtArea := ta.New()
 	txtArea.Placeholder = "Enter your prompt..."
@@ -76,10 +80,13 @@ func initialEditorModel(initialContent string) editorModel {
 	}
 }
 
+// Init initializes the editor model and returns the blink command for the textarea.
 func (m editorModel) Init() tea.Cmd {
 	return ta.Blink
 }
 
+// Update handles key events and updates the editor model.
+// Key bindings: Ctrl+C/Esc to cancel, Ctrl+D/Alt+Enter to save and exit.
 func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -101,6 +108,7 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View renders the editor interface with instructions and textarea.
 func (m editorModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		"\n"+
@@ -110,6 +118,7 @@ func (m editorModel) View() string {
 	)
 }
 
+// RunTUIEditor starts the TUI editor with initial content and returns the edited content.
 func RunTUIEditor(initialContent string) (string, error) {
 	p := tea.NewProgram(initialEditorModel(initialContent))
 

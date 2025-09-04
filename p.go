@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/ktr0731/go-fuzzyfinder"
@@ -11,14 +12,55 @@ import (
 
 var Version = "dev"
 
+// normalizeTags trims, deduplicates, and sorts tags for consistency.
+func normalizeTags(tags string) string {
+	if tags == "" {
+		return ""
+	}
+
+	tagMap := make(map[string]struct{})
+	for _, tag := range strings.Split(tags, ",") {
+		if trimmed := strings.TrimSpace(tag); trimmed != "" {
+			tagMap[trimmed] = struct{}{}
+		}
+	}
+
+	var result []string
+	for tag := range tagMap {
+		result = append(result, tag)
+	}
+	sort.Strings(result)
+	return strings.Join(result, ",")
+}
+
+// addExternalEditorFlag adds the external-editor flag to a command.
+func addExternalEditorFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
+}
+
+// validatePromptContent checks if prompt content meets basic requirements.
+func validatePromptContent(content string) error {
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("prompt content cannot be empty")
+	}
+	if len(trimmed) > 10000 {
+		return fmt.Errorf("prompt content too long (%d chars), maximum 10,000 characters", len(trimmed))
+	}
+	return nil
+}
+
+// App represents the main application with a prompt store for managing prompts.
 type App struct {
 	promptStore *SQLitePromptStore
 }
 
+// NewApp creates a new App instance with the given prompt store.
 func NewApp(store *SQLitePromptStore) *App {
 	return &App{promptStore: store}
 }
 
+// AddPrompt creates a new prompt using either external editor or TUI editor.
 func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 	var promptContent string
 	var err error
@@ -39,13 +81,19 @@ func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 		return nil
 	}
 
-	err = a.promptStore.AddPrompt(name, promptContent, tags)
+	if err := validatePromptContent(promptContent); err != nil {
+		return err
+	}
+
+	normalizedTags := normalizeTags(tags)
+	err = a.promptStore.AddPrompt(name, promptContent, normalizedTags)
 	if err != nil {
 		return fmt.Errorf("error adding prompt: %w", err)
 	}
 	return nil
 }
 
+// DeletePrompt removes a prompt by name from the store.
 func (a *App) DeletePrompt(name string) error {
 	err := a.promptStore.DeletePrompt(name)
 	if err != nil {
@@ -54,29 +102,32 @@ func (a *App) DeletePrompt(name string) error {
 	return nil
 }
 
+// EditPrompt updates an existing prompt's content and tags.
 func (a *App) EditPrompt(name, newPrompt, newTags string) error {
 	existingPrompt, err := a.promptStore.GetPromptByName(name)
 	if err != nil {
 		return fmt.Errorf("error retrieving existing prompt: %w", err)
 	}
 
+	normalizedTags := normalizeTags(newTags)
 	// The logic to check for changes can also be simplified or moved here
-	if newPrompt == existingPrompt.Prompt && newTags == existingPrompt.Tags {
+	if newPrompt == existingPrompt.Prompt && normalizedTags == existingPrompt.Tags {
 		fmt.Println("No changes detected for prompt or tags.")
 		return nil
 	}
 
-	if newPrompt == "" {
-		return fmt.Errorf("prompt content cannot be empty")
+	if err := validatePromptContent(newPrompt); err != nil {
+		return err
 	}
 
-	err = a.promptStore.UpdatePrompt(name, newPrompt, newTags)
+	err = a.promptStore.UpdatePrompt(name, newPrompt, normalizedTags)
 	if err != nil {
 		return fmt.Errorf("error editing prompt: %w", err)
 	}
 	return nil
 }
 
+// ListPrompts retrieves all prompts, optionally filtered by tags.
 func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	prompts, err := a.promptStore.ListPrompts()
 	if err != nil {
@@ -87,16 +138,17 @@ func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 		return prompts, nil
 	}
 
+	normalizedFilter := normalizeTags(tagsFilter)
 	filterTags := map[string]struct{}{}
-	for _, t := range strings.Split(tagsFilter, ",") {
-		filterTags[strings.TrimSpace(t)] = struct{}{}
+	for _, t := range strings.Split(normalizedFilter, ",") {
+		filterTags[t] = struct{}{}
 	}
 
 	var filteredPrompts []Prompt
 	for _, p := range prompts {
 		promptTags := strings.Split(p.Tags, ",")
 		for _, pt := range promptTags {
-			if _, ok := filterTags[strings.TrimSpace(pt)]; ok {
+			if _, ok := filterTags[pt]; ok {
 				filteredPrompts = append(filteredPrompts, p)
 				break
 			}
@@ -106,6 +158,7 @@ func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	return filteredPrompts, nil
 }
 
+// printPrompt displays a prompt's details in a formatted output.
 func printPrompt(p Prompt) {
 	fmt.Printf("Name: %s\n", p.Name)
 	fmt.Printf("Prompt: %s\n", p.Prompt)
@@ -164,7 +217,7 @@ func newAddCmd(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringP("tags", "t", "", "Tags for the prompt (comma-separated)")
-	cmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
+	addExternalEditorFlag(cmd)
 	return cmd
 }
 
@@ -253,7 +306,7 @@ func newEditCmd(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringP("tags", "t", "", "New tags for the prompt (comma-separated)")
-	cmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
+	addExternalEditorFlag(cmd)
 	return cmd
 }
 
@@ -263,6 +316,9 @@ func newListCmd(app *App) *cobra.Command {
 		Short: "List all prompts",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tags, _ := cmd.Flags().GetString("tags")
+			if tags == "" {
+				fmt.Println("No tags specified, listing all prompts")
+			}
 			prompts, err := app.ListPrompts(tags)
 			if err != nil {
 				return err

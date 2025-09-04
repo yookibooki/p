@@ -1,2 +1,15 @@
 repomix-output.md
 p
+
+# Go build artifacts
+bin/
+vendor/
+*.test
+*.out
+coverage.out
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
