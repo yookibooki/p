@@ -12,8 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// LaunchExternalEditor opens the user's preferred editor (from $EDITOR or defaults to vim/nano)
-// with the given initial content and returns the edited content.
+// LaunchExternalEditor opens an external editor to capture prompt content.
 func LaunchExternalEditor(initialContent string) (string, error) {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
@@ -86,18 +85,13 @@ func (m editorModel) Init() tea.Cmd {
 }
 
 // Update handles key events and updates the editor model.
-// Key bindings: Ctrl+C/Esc to cancel, Ctrl+D/Alt+Enter to save and exit.
 func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "esc":
-			m.quitting = true
-			return m, tea.Quit
-		case "ctrl+d":
-			m.quitting = true
-			return m, tea.Quit
-		case "alt+enter":
+		quitKeys := map[string]struct{}{
+			"ctrl+c": {}, "esc": {}, "ctrl+d": {}, "alt+enter": {},
+		}
+		if _, ok := quitKeys[msg.String()]; ok {
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -112,13 +106,13 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m editorModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		"\n"+
-			"  "+lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Enter your prompt. Press Alt+Enter or Ctrl+D to save and exit, or Ctrl+C to cancel."),
+			"  "+lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Enter your prompt. Press Alt+Enter or Ctrl+D to save, Esc or Ctrl+C to cancel."),
 		"\n"+
 			m.ta.View(),
 	)
 }
 
-// RunTUIEditor starts the TUI editor with initial content and returns the edited content.
+// RunTUIEditor starts a terminal UI editor and returns the edited content.
 func RunTUIEditor(initialContent string) (string, error) {
 	p := tea.NewProgram(initialEditorModel(initialContent))
 

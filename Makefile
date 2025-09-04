@@ -75,10 +75,10 @@ build: check-tools ## Build binary with version info
 	@$(GO) build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY) $(PKG) || { echo "Error: build failed"; exit 1; }
 
 ## Run full build pipeline: fmt, vet, lint, test, tidy, build
-release: fmt vet lint test tidy build ## Full safe build
+release: check-tools fmt vet lint test tidy build ## Full safe build
 
 ## Run code quality checks (for CI)
-check: fmt vet lint test tidy ## Run all checks without building
+check: check-tools fmt vet lint test tidy ## Run all checks without building
 
 ## Install binary to $(INSTALL_DIR)
 install: check-tools release ## Install binary to $(INSTALL_DIR)

@@ -38,6 +38,17 @@ func addExternalEditorFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
 }
 
+// validatePromptName checks if prompt name meets basic requirements.
+func validatePromptName(name string) error {
+	if name == "" {
+		return fmt.Errorf("prompt name cannot be empty")
+	}
+	if len(name) > 255 {
+		return fmt.Errorf("prompt name too long (%d chars), maximum 255 characters", len(name))
+	}
+	return nil
+}
+
 // validatePromptContent checks if prompt content meets basic requirements.
 func validatePromptContent(content string) error {
 	trimmed := strings.TrimSpace(content)
@@ -50,7 +61,7 @@ func validatePromptContent(content string) error {
 	return nil
 }
 
-// App represents the main application with a prompt store for managing prompts.
+// App manages prompt-related operations using a SQLite store.
 type App struct {
 	promptStore *SQLitePromptStore
 }
@@ -62,6 +73,10 @@ func NewApp(store *SQLitePromptStore) *App {
 
 // AddPrompt creates a new prompt using either external editor or TUI editor.
 func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
+	if err := validatePromptName(name); err != nil {
+		return err
+	}
+
 	var promptContent string
 	var err error
 
@@ -104,6 +119,10 @@ func (a *App) DeletePrompt(name string) error {
 
 // EditPrompt updates an existing prompt's content and tags.
 func (a *App) EditPrompt(name, newPrompt, newTags string) error {
+	if err := validatePromptName(name); err != nil {
+		return err
+	}
+
 	existingPrompt, err := a.promptStore.GetPromptByName(name)
 	if err != nil {
 		return fmt.Errorf("error retrieving existing prompt: %w", err)
@@ -146,7 +165,7 @@ func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 
 	var filteredPrompts []Prompt
 	for _, p := range prompts {
-		promptTags := strings.Split(p.Tags, ",")
+		promptTags := strings.Split(normalizeTags(p.Tags), ",")
 		for _, pt := range promptTags {
 			if _, ok := filterTags[pt]; ok {
 				filteredPrompts = append(filteredPrompts, p)
@@ -207,7 +226,10 @@ func newAddCmd(app *App) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not parse tags flag: %w", err)
 			}
-			useExternalEditor, _ := cmd.Flags().GetBool("external-editor")
+			useExternalEditor, err := cmd.Flags().GetBool("external-editor")
+			if err != nil {
+				return fmt.Errorf("could not parse external-editor flag: %w", err)
+			}
 
 			if err := app.AddPrompt(name, tags, useExternalEditor); err != nil {
 				return err
@@ -275,7 +297,10 @@ func newEditCmd(app *App) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			useExternalEditor, _ := cmd.Flags().GetBool("external-editor")
+			useExternalEditor, err := cmd.Flags().GetBool("external-editor")
+			if err != nil {
+				return fmt.Errorf("could not parse external-editor flag: %w", err)
+			}
 
 			existingPrompt, err := app.promptStore.GetPromptByName(name)
 			if err != nil {
@@ -284,7 +309,10 @@ func newEditCmd(app *App) *cobra.Command {
 
 			finalTags := existingPrompt.Tags
 			if cmd.Flags().Changed("tags") {
-				finalTags, _ = cmd.Flags().GetString("tags")
+				finalTags, err = cmd.Flags().GetString("tags")
+				if err != nil {
+					return fmt.Errorf("could not parse tags flag: %w", err)
+				}
 			}
 
 			var editedPromptContent string
@@ -322,6 +350,11 @@ func newListCmd(app *App) *cobra.Command {
 			prompts, err := app.ListPrompts(tags)
 			if err != nil {
 				return err
+			}
+
+			if len(prompts) == 0 && tags != "" {
+				fmt.Printf("No prompts found for tags: %s\n", tags)
+				return nil
 			}
 
 			for _, p := range prompts {

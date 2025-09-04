@@ -12,6 +12,7 @@ type Prompt struct {
 	Tags   string
 }
 
+// SQLitePromptStore manages prompts using SQLite database.
 type SQLitePromptStore struct {
 	db *sql.DB
 }

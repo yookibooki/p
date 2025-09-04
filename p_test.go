@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+func TestValidatePromptName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"empty name", "", true},
+		{"valid name", "test", false},
+		{"max length name", string(make([]byte, 255)), false},
+		{"too long name", string(make([]byte, 256)), true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePromptName(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validatePromptName() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidatePromptContent(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -41,6 +63,7 @@ func TestNormalizeTags(t *testing.T) {
 		{"multiple tags", "b,a,c", "a,b,c"},
 		{"duplicate tags", "test,test,other", "other,test"},
 		{"whitespace tags", " a , b , c ", "a,b,c"},
+		{"malformed tags", "a,,b,,,c", "a,b,c"},
 	}
 
 	for _, tt := range tests {
@@ -109,5 +132,19 @@ func TestDuplicateNames(t *testing.T) {
 	err = store.AddPrompt("test", "content2", "tag2")
 	if err == nil {
 		t.Error("Expected error for duplicate name, got nil")
+	}
+}
+
+func TestEditorCancellation(t *testing.T) {
+	// Test that validation catches empty content
+	err := validatePromptContent("")
+	if err == nil {
+		t.Error("Expected error for empty content, got nil")
+	}
+
+	// Test that whitespace-only content is properly validated
+	err = validatePromptContent("   \n\t  ")
+	if err == nil {
+		t.Error("Expected error for whitespace-only content, got nil")
 	}
 }
