@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
-
 // App struct holds the core application logic and its dependencies.
 type App struct {
 	promptStore    PromptStore
@@ -52,8 +50,6 @@ func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 	}
 	return nil
 }
-
-
 
 // DeletePrompt handles the logic for deleting a prompt.
 func (a *App) DeletePrompt(name string) error {
@@ -112,9 +108,12 @@ func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	return prompts, nil
 }
 
-
-
-
+func printPrompt(p Prompt) {
+	fmt.Printf("Name: %s\n", p.Name)
+	fmt.Printf("Prompt: %s\n", p.Prompt)
+	fmt.Printf("Tags: %s\n", p.Tags)
+	fmt.Println("---")
+}
 
 func main() {
 	db, err := InitDB()
@@ -122,6 +121,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error initializing database: %v\n", err)
 		os.Exit(1)
 	}
+
 	defer db.Close()
 
 	app := NewApp(NewSQLitePromptStore(db), &ExternalEditor{}, &TUIEditor{})
@@ -261,4 +261,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-

@@ -112,5 +112,3 @@ func (s *SQLitePromptStore) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	}
 	return prompts, nil
 }
-
-
