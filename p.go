@@ -12,7 +12,12 @@ import (
 
 var Version = "dev"
 
-// normalizeTags trims, deduplicates, and sorts tags for consistency.
+const (
+	MaxPromptNameLen    = 255
+	MaxPromptContentLen = 10000
+)
+
+// normalizeTags deduplicates and sorts comma-separated tags, trimming whitespace.
 func normalizeTags(tags string) string {
 	if tags == "" {
 		return ""
@@ -43,8 +48,8 @@ func validatePromptName(name string) error {
 	if name == "" {
 		return fmt.Errorf("prompt name cannot be empty")
 	}
-	if len(name) > 255 {
-		return fmt.Errorf("prompt name too long (%d chars), maximum 255 characters", len(name))
+	if len(name) > MaxPromptNameLen {
+		return fmt.Errorf("prompt name too long (%d chars), maximum %d characters", len(name), MaxPromptNameLen)
 	}
 	return nil
 }
@@ -55,8 +60,8 @@ func validatePromptContent(content string) error {
 	if len(trimmed) == 0 {
 		return fmt.Errorf("prompt content cannot be empty")
 	}
-	if len(trimmed) > 10000 {
-		return fmt.Errorf("prompt content too long (%d chars), maximum 10,000 characters", len(trimmed))
+	if len(trimmed) > MaxPromptContentLen {
+		return fmt.Errorf("prompt content too long (%d chars), maximum %d characters", len(trimmed), MaxPromptContentLen)
 	}
 	return nil
 }
@@ -103,7 +108,7 @@ func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 	normalizedTags := normalizeTags(tags)
 	err = a.promptStore.AddPrompt(name, promptContent, normalizedTags)
 	if err != nil {
-		return fmt.Errorf("error adding prompt: %w", err)
+		return err
 	}
 	return nil
 }
@@ -147,6 +152,7 @@ func (a *App) EditPrompt(name, newPrompt, newTags string) error {
 }
 
 // ListPrompts retrieves all prompts, optionally filtered by tags.
+// Note: Tag filtering is done in-memory for simplicity, acceptable for low-volume use.
 func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	prompts, err := a.promptStore.ListPrompts()
 	if err != nil {
@@ -183,6 +189,43 @@ func printPrompt(p Prompt) {
 	fmt.Printf("Prompt: %s\n", p.Prompt)
 	fmt.Printf("Tags: %s\n", p.Tags)
 	fmt.Println("---")
+}
+
+// getPromptNames returns all prompt names for shell completion.
+func getPromptNames(app *App) []string {
+	prompts, err := app.ListPrompts("")
+	if err != nil {
+		return []string{}
+	}
+	names := make([]string, len(prompts))
+	for i, p := range prompts {
+		names[i] = p.Name
+	}
+	return names
+}
+
+// getAllTags returns all unique tags for shell completion.
+func getAllTags(app *App) []string {
+	prompts, err := app.ListPrompts("")
+	if err != nil {
+		return []string{}
+	}
+	tagSet := make(map[string]struct{})
+	for _, p := range prompts {
+		if p.Tags != "" {
+			for _, tag := range strings.Split(p.Tags, ",") {
+				if trimmed := strings.TrimSpace(tag); trimmed != "" {
+					tagSet[trimmed] = struct{}{}
+				}
+			}
+		}
+	}
+	tags := make([]string, 0, len(tagSet))
+	for tag := range tagSet {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return tags
 }
 
 func main() {
@@ -240,6 +283,12 @@ func newAddCmd(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringP("tags", "t", "", "Tags for the prompt (comma-separated)")
 	addExternalEditorFlag(cmd)
+
+	// Add completion for tags flag
+	cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getAllTags(app), cobra.ShellCompDirectiveNoFileComp
+	})
+
 	return cmd
 }
 
@@ -275,7 +324,7 @@ func newSearchCmd(app *App) *cobra.Command {
 }
 
 func newDeleteCmd(app *App) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "delete [name]",
 		Short: "Delete a prompt",
 		Args:  cobra.ExactArgs(1),
@@ -287,7 +336,14 @@ func newDeleteCmd(app *App) *cobra.Command {
 			fmt.Println("Prompt deleted successfully!")
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return getPromptNames(app), cobra.ShellCompDirectiveNoFileComp
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
+	return cmd
 }
 
 func newEditCmd(app *App) *cobra.Command {
@@ -332,9 +388,21 @@ func newEditCmd(app *App) *cobra.Command {
 			fmt.Println("Prompt edited successfully!")
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return getPromptNames(app), cobra.ShellCompDirectiveNoFileComp
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
 	cmd.Flags().StringP("tags", "t", "", "New tags for the prompt (comma-separated)")
 	addExternalEditorFlag(cmd)
+
+	// Add completion for tags flag
+	cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getAllTags(app), cobra.ShellCompDirectiveNoFileComp
+	})
+
 	return cmd
 }
 
@@ -364,6 +432,12 @@ func newListCmd(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringP("tags", "t", "", "Filter by tags (comma-separated)")
+
+	// Add completion for tags flag
+	cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getAllTags(app), cobra.ShellCompDirectiveNoFileComp
+	})
+
 	return cmd
 }
 

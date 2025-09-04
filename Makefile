@@ -6,10 +6,8 @@ PKG ?= ./...
 GO ?= go
 # Installation directory (override with `make INSTALL_DIR=/custom/path`)
 INSTALL_DIR ?= $(HOME)/.local/bin
-# Bash completion directory
-COMPLETION_DIR ?= $(HOME)/.local/share/bash-completion/completions
-# Zsh completion directory (optional override)
-ZSH_COMPLETION_DIR ?= $(COMPLETION_DIR)
+
+
 # Git version for build
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
 # Linker flags with version
@@ -17,7 +15,7 @@ LDFLAGS ?= -ldflags "-X main.Version=$(VERSION)"
 # Output directory for binaries
 BIN_DIR ?= bin
 
-.PHONY: all fmt vet lint test tidy build release install clean completion-bash completion-zsh check check-tools help
+.PHONY: all fmt vet lint test tidy build release install clean check check-tools help
 
 # Default target
 all: build
@@ -31,8 +29,6 @@ help:
 	@echo "  PKG               Package path (default: $(PKG))"
 	@echo "  GO                Go command (default: $(GO))"
 	@echo "  INSTALL_DIR       Installation directory (default: $(INSTALL_DIR))"
-	@echo "  COMPLETION_DIR    Bash completion directory (default: $(COMPLETION_DIR))"
-	@echo "  ZSH_COMPLETION_DIR Zsh completion directory (default: $(ZSH_COMPLETION_DIR))"
 	@echo "  VERSION           Build version (default: $(VERSION))"
 	@echo "  BIN_DIR           Output directory for binaries (default: $(BIN_DIR))"
 	@echo ""
@@ -86,17 +82,9 @@ install: check-tools release ## Install binary to $(INSTALL_DIR)
 	@cp -f $(BIN_DIR)/$(BINARY) $(INSTALL_DIR)/ || { echo "Error: installation failed"; exit 1; }
 	@echo "Installed $(BINARY) to $(INSTALL_DIR)"
 
-## Install bash completion
-completion-bash: build ## Install bash completion script
-	@mkdir -p $(COMPLETION_DIR)
-	@$(BIN_DIR)/$(BINARY) completion bash > $(COMPLETION_DIR)/$(BINARY) || { echo "Error: bash completion generation failed"; exit 1; }
-	@echo "Installed bash completion to $(COMPLETION_DIR)/$(BINARY)"
 
-## Install zsh completion
-completion-zsh: build ## Install zsh completion script
-	@mkdir -p $(ZSH_COMPLETION_DIR)
-	@$(BIN_DIR)/$(BINARY) completion zsh > $(ZSH_COMPLETION_DIR)/$(BINARY).zsh || { echo "Error: zsh completion generation failed"; exit 1; }
-	@echo "Installed zsh completion to $(ZSH_COMPLETION_DIR)/$(BINARY).zsh"
+
+
 
 ## Remove build artifacts
 clean: ## Remove build artifacts

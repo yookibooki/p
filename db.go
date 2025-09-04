@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 type Prompt struct {
@@ -25,6 +26,9 @@ func (s *SQLitePromptStore) AddPrompt(name, prompt, tags string) error {
 	query := "INSERT INTO prompts (name, prompt, tags) VALUES (?, ?, ?)"
 	_, err := s.db.Exec(query, name, prompt, tags)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return fmt.Errorf("prompt name '%s' already exists", name)
+		}
 		return fmt.Errorf("error adding prompt: %w", err)
 	}
 	return nil

@@ -88,10 +88,14 @@ func (m editorModel) Init() tea.Cmd {
 func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		quitKeys := map[string]struct{}{
-			"ctrl+c": {}, "esc": {}, "ctrl+d": {}, "alt+enter": {},
-		}
-		if _, ok := quitKeys[msg.String()]; ok {
+		switch {
+		case msg.Type == tea.KeyEsc || msg.Type == tea.KeyCtrlC:
+			m.quitting = true
+			return m, tea.Quit
+		case msg.Type == tea.KeyCtrlD:
+			m.quitting = true
+			return m, tea.Quit
+		case msg.Type == tea.KeyEnter && msg.Alt:
 			m.quitting = true
 			return m, tea.Quit
 		}
