@@ -1,3 +1,5 @@
+```bash
+```
 p is a CLI for managing LLM prompts
 
 Usage:
@@ -17,3 +19,5 @@ Flags:
   -h, --help   help for p
 
 Use "p [command] --help" for more information about a command.
+```
+```
