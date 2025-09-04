@@ -19,7 +19,6 @@ type PromptStore interface {
 	UpdatePrompt(name, newPrompt, newTags string) error
 	DeletePrompt(name string) error
 	ListPrompts(tagsFilter string) ([]Prompt, error)
-	SearchPrompts() ([]Prompt, error)
 }
 
 type SQLitePromptStore struct {
@@ -114,20 +113,4 @@ func (s *SQLitePromptStore) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	return prompts, nil
 }
 
-func (s *SQLitePromptStore) SearchPrompts() ([]Prompt, error) {
-	rows, err := s.db.Query("SELECT name, prompt, tags FROM prompts")
-	if err != nil {
-		return nil, fmt.Errorf("error listing prompts for search: %w", err)
-	}
-	defer rows.Close()
 
-	var prompts []Prompt
-	for rows.Next() {
-		var p Prompt
-		if err := rows.Scan(&p.Name, &p.Prompt, &p.Tags); err != nil {
-			return nil, fmt.Errorf("error scanning row for search: %w", err)
-		}
-		prompts = append(prompts, p)
-	}
-	return prompts, nil
-}
