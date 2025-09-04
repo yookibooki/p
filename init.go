@@ -43,7 +43,7 @@ func InitDB() (*sql.DB, error) {
 
 	_, err = db.Exec(sqlStmt)
 	if err != nil {
-		db.Close() // Close the DB connection if table creation fails
+		db.Close()
 		return nil, fmt.Errorf("error creating table: %w", err)
 	}
 

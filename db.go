@@ -61,7 +61,7 @@ func (s *SQLitePromptStore) UpdatePrompt(name, newPrompt, newTags string) error 
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		// This error is less critical but good to have for debugging
+
 		return fmt.Errorf("error checking rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
@@ -72,15 +72,22 @@ func (s *SQLitePromptStore) UpdatePrompt(name, newPrompt, newTags string) error 
 
 func (s *SQLitePromptStore) DeletePrompt(name string) error {
 	query := "DELETE FROM prompts WHERE name = ?"
-	_, err := s.db.Exec(query, name)
+	result, err := s.db.Exec(query, name)
 	if err != nil {
 		return fmt.Errorf("error deleting prompt: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error checking rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("prompt '%s' not found for deletion", name)
 	}
 	return nil
 }
 
 func (s *SQLitePromptStore) ListPrompts(tagsFilter string) ([]Prompt, error) {
-	query := "SELECT name, prompt, tags FROM prompts"
+	query := "SELECT id, name, prompt, tags FROM prompts" // Add 'id'
 	var queryArgs []interface{}
 
 	if tagsFilter != "" {
@@ -105,7 +112,7 @@ func (s *SQLitePromptStore) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	var prompts []Prompt
 	for rows.Next() {
 		var p Prompt
-		if err := rows.Scan(&p.Name, &p.Prompt, &p.Tags); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Prompt, &p.Tags); err != nil { // Scan p.ID
 			return nil, fmt.Errorf("error scanning row: %w", err)
 		}
 		prompts = append(prompts, p)

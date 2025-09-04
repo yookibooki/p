@@ -8,32 +8,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// App struct holds the core application logic and its dependencies.
 type App struct {
-	promptStore    PromptStore
-	externalEditor Editor
-	tuiEditor      Editor
+	promptStore PromptStore
 }
 
-// NewApp creates a new App instance.
-func NewApp(store PromptStore, extEditor, tuiEditor Editor) *App {
-	return &App{
-		promptStore:    store,
-		externalEditor: extEditor,
-		tuiEditor:      tuiEditor,
-	}
+func NewApp(store PromptStore) *App {
+	return &App{promptStore: store}
 }
 
-// AddPrompt handles the logic for adding a new prompt.
 func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 	var promptContent string
 	var err error
 
 	if useExternalEditor {
 		fmt.Println("Launching external editor...")
-		promptContent, err = a.externalEditor.Edit("")
+		promptContent, err = LaunchExternalEditor("") // Direct call
 	} else {
-		promptContent, err = a.tuiEditor.Edit("")
+		promptContent, err = RunTUIEditor("") // Direct call
 	}
 
 	if err != nil {
@@ -51,7 +42,6 @@ func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 	return nil
 }
 
-// DeletePrompt handles the logic for deleting a prompt.
 func (a *App) DeletePrompt(name string) error {
 	err := a.promptStore.DeletePrompt(name)
 	if err != nil {
@@ -60,46 +50,29 @@ func (a *App) DeletePrompt(name string) error {
 	return nil
 }
 
-// EditPrompt handles the logic for editing a prompt.
-func (a *App) EditPrompt(name, tags string, useExternalEditor bool) error {
-	// Get existing prompt to pre-fill editor and preserve unchanged fields
+func (a *App) EditPrompt(name, newPrompt, newTags string) error {
 	existingPrompt, err := a.promptStore.GetPromptByName(name)
 	if err != nil {
 		return fmt.Errorf("error retrieving existing prompt: %w", err)
 	}
 
-	var editedPromptContent string
-	if useExternalEditor {
-		fmt.Println("Launching external editor...")
-		editedPromptContent, err = a.externalEditor.Edit(existingPrompt.Prompt)
-	} else {
-		editedPromptContent, err = a.tuiEditor.Edit(existingPrompt.Prompt)
-	}
-	if err != nil {
-		return fmt.Errorf("error getting edited prompt content: %w", err)
+	// The logic to check for changes can also be simplified or moved here
+	if newPrompt == existingPrompt.Prompt && newTags == existingPrompt.Tags {
+		fmt.Println("No changes detected for prompt or tags.")
+		return nil
 	}
 
-	// Determine the final state of the prompt and tags
-	finalPromptContent := editedPromptContent
-	finalTags := tags // Use the 'tags' parameter directly
-
-	if finalPromptContent == existingPrompt.Prompt && finalTags == existingPrompt.Tags {
-		return fmt.Errorf("no changes detected for prompt or tags")
-	}
-
-	// Consistency check: prevent making prompt content empty on edit
-	if finalPromptContent == "" {
+	if newPrompt == "" {
 		return fmt.Errorf("prompt content cannot be empty")
 	}
 
-	err = a.promptStore.UpdatePrompt(name, finalPromptContent, finalTags)
+	err = a.promptStore.UpdatePrompt(name, newPrompt, newTags)
 	if err != nil {
 		return fmt.Errorf("error editing prompt: %w", err)
 	}
 	return nil
 }
 
-// ListPrompts handles the logic for listing prompts.
 func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	prompts, err := a.promptStore.ListPrompts(tagsFilter)
 	if err != nil {
@@ -124,7 +97,7 @@ func main() {
 
 	defer db.Close()
 
-	app := NewApp(NewSQLitePromptStore(db), &ExternalEditor{}, &TUIEditor{})
+	app := NewApp(NewSQLitePromptStore(db))
 
 	var rootCmd = &cobra.Command{
 		Use:   "p",
@@ -150,7 +123,7 @@ func main() {
 			tags, _ := cmd.Flags().GetString("tags")
 			useExternalEditor, _ := cmd.Flags().GetBool("external-editor")
 
-			err := app.AddPrompt(name, tags, useExternalEditor)
+			err = app.AddPrompt(name, tags, useExternalEditor)
 			if err != nil {
 				return err
 			}
@@ -213,19 +186,32 @@ func main() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			useExternalEditor, _ := cmd.Flags().GetBool("external-editor")
-			var finalTags string
 
-			if cmd.Flags().Changed("tags") {
-				finalTags, _ = cmd.Flags().GetString("tags")
-			} else {
-				existingPrompt, err := app.promptStore.GetPromptByName(name)
-				if err != nil {
-					return fmt.Errorf("error retrieving existing prompt for tags: %w", err)
-				}
-				finalTags = existingPrompt.Tags
+			existingPrompt, err := app.promptStore.GetPromptByName(name)
+			if err != nil {
+				return err // Let cobra print the error
 			}
 
-			err := app.EditPrompt(name, finalTags, useExternalEditor)
+			// Determine final tags
+			finalTags := existingPrompt.Tags
+			if cmd.Flags().Changed("tags") {
+				finalTags, _ = cmd.Flags().GetString("tags")
+			}
+
+			// Determine final prompt content
+			var editedPromptContent string
+			if useExternalEditor {
+				fmt.Println("Launching external editor...")
+				editedPromptContent, err = LaunchExternalEditor(existingPrompt.Prompt)
+			} else {
+				editedPromptContent, err = RunTUIEditor(existingPrompt.Prompt)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Call the simplified EditPrompt method
+			err = app.EditPrompt(name, editedPromptContent, finalTags)
 			if err != nil {
 				return err
 			}
