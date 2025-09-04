@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"p/database"
-	"p/p"
+
+	"github.com/yookibooki/p/database"
+	"github.com/yookibooki/p/p"
 
 	"github.com/spf13/cobra"
 )

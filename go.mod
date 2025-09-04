@@ -1,4 +1,4 @@
-module p
+module github.com/yookibooki/p
 
 go 1.25.0
 
