@@ -3,16 +3,19 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/spf13/cobra"
 )
 
+var Version = "dev"
+
 type App struct {
-	promptStore PromptStore
+	promptStore *SQLitePromptStore
 }
 
-func NewApp(store PromptStore) *App {
+func NewApp(store *SQLitePromptStore) *App {
 	return &App{promptStore: store}
 }
 
@@ -22,9 +25,9 @@ func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 
 	if useExternalEditor {
 		fmt.Println("Launching external editor...")
-		promptContent, err = LaunchExternalEditor("") // Direct call
+		promptContent, err = LaunchExternalEditor("")
 	} else {
-		promptContent, err = RunTUIEditor("") // Direct call
+		promptContent, err = RunTUIEditor("")
 	}
 
 	if err != nil {
@@ -32,7 +35,8 @@ func (a *App) AddPrompt(name, tags string, useExternalEditor bool) error {
 	}
 
 	if promptContent == "" {
-		return fmt.Errorf("prompt content cannot be empty")
+		fmt.Println("Operation cancelled. No prompt added.")
+		return nil
 	}
 
 	err = a.promptStore.AddPrompt(name, promptContent, tags)
@@ -74,11 +78,32 @@ func (a *App) EditPrompt(name, newPrompt, newTags string) error {
 }
 
 func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
-	prompts, err := a.promptStore.ListPrompts(tagsFilter)
+	prompts, err := a.promptStore.ListPrompts()
 	if err != nil {
 		return nil, fmt.Errorf("error listing prompts: %w", err)
 	}
-	return prompts, nil
+
+	if tagsFilter == "" {
+		return prompts, nil
+	}
+
+	filterTags := map[string]struct{}{}
+	for _, t := range strings.Split(tagsFilter, ",") {
+		filterTags[strings.TrimSpace(t)] = struct{}{}
+	}
+
+	var filteredPrompts []Prompt
+	for _, p := range prompts {
+		promptTags := strings.Split(p.Tags, ",")
+		for _, pt := range promptTags {
+			if _, ok := filterTags[strings.TrimSpace(pt)]; ok {
+				filteredPrompts = append(filteredPrompts, p)
+				break
+			}
+		}
+	}
+
+	return filteredPrompts, nil
 }
 
 func printPrompt(p Prompt) {
@@ -94,47 +119,57 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error initializing database: %v\n", err)
 		os.Exit(1)
 	}
-
 	defer db.Close()
 
 	app := NewApp(NewSQLitePromptStore(db))
 
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "p",
 		Short: "p is a CLI for managing LLM prompts",
-		Long:  `p is a CLI for managing LLM prompts`,
 	}
 
-	var versionCmd = &cobra.Command{
-		Use:   "version",
-		Short: "Print the version number of p",
-		Long:  `All software has versions. This is p's.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("p version 0.1.0")
-		},
-	}
+	rootCmd.AddCommand(
+		newAddCmd(app),
+		newSearchCmd(app),
+		newDeleteCmd(app),
+		newEditCmd(app),
+		newListCmd(app),
+		newVersionCmd(),
+	)
 
-	var addCmd = &cobra.Command{
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func newAddCmd(app *App) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "add [name]",
 		Short: "Add a new prompt",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			tags, _ := cmd.Flags().GetString("tags")
+			tags, err := cmd.Flags().GetString("tags")
+			if err != nil {
+				return fmt.Errorf("could not parse tags flag: %w", err)
+			}
 			useExternalEditor, _ := cmd.Flags().GetBool("external-editor")
 
-			err = app.AddPrompt(name, tags, useExternalEditor)
-			if err != nil {
+			if err := app.AddPrompt(name, tags, useExternalEditor); err != nil {
 				return err
 			}
 			fmt.Println("Prompt added successfully!")
 			return nil
 		},
 	}
-	addCmd.Flags().StringP("tags", "t", "", "Tags for the prompt (comma-separated)")
-	addCmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
+	cmd.Flags().StringP("tags", "t", "", "Tags for the prompt (comma-separated)")
+	cmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
+	return cmd
+}
 
-	var searchCmd = &cobra.Command{
+func newSearchCmd(app *App) *cobra.Command {
+	return &cobra.Command{
 		Use:   "search",
 		Short: "Search for prompts using a fuzzy finder",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,24 +197,26 @@ func main() {
 			return nil
 		},
 	}
+}
 
-	var deleteCmd = &cobra.Command{
+func newDeleteCmd(app *App) *cobra.Command {
+	return &cobra.Command{
 		Use:   "delete [name]",
 		Short: "Delete a prompt",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-
-			err := app.DeletePrompt(name)
-			if err != nil {
+			if err := app.DeletePrompt(name); err != nil {
 				return err
 			}
 			fmt.Println("Prompt deleted successfully!")
 			return nil
 		},
 	}
+}
 
-	var editCmd = &cobra.Command{
+func newEditCmd(app *App) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "edit [name]",
 		Short: "Edit a prompt",
 		Args:  cobra.ExactArgs(1),
@@ -189,16 +226,14 @@ func main() {
 
 			existingPrompt, err := app.promptStore.GetPromptByName(name)
 			if err != nil {
-				return err // Let cobra print the error
+				return err
 			}
 
-			// Determine final tags
 			finalTags := existingPrompt.Tags
 			if cmd.Flags().Changed("tags") {
 				finalTags, _ = cmd.Flags().GetString("tags")
 			}
 
-			// Determine final prompt content
 			var editedPromptContent string
 			if useExternalEditor {
 				fmt.Println("Launching external editor...")
@@ -210,19 +245,20 @@ func main() {
 				return err
 			}
 
-			// Call the simplified EditPrompt method
-			err = app.EditPrompt(name, editedPromptContent, finalTags)
-			if err != nil {
+			if err := app.EditPrompt(name, editedPromptContent, finalTags); err != nil {
 				return err
 			}
 			fmt.Println("Prompt edited successfully!")
 			return nil
 		},
 	}
-	editCmd.Flags().StringP("tags", "t", "", "New tags for the prompt (comma-separated)")
-	editCmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
+	cmd.Flags().StringP("tags", "t", "", "New tags for the prompt (comma-separated)")
+	cmd.Flags().BoolP("external-editor", "e", false, "Use external editor for prompt content")
+	return cmd
+}
 
-	var listCmd = &cobra.Command{
+func newListCmd(app *App) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all prompts",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -238,12 +274,16 @@ func main() {
 			return nil
 		},
 	}
-	listCmd.Flags().StringP("tags", "t", "", "Filter by tags (comma-separated)")
+	cmd.Flags().StringP("tags", "t", "", "Filter by tags (comma-separated)")
+	return cmd
+}
 
-	rootCmd.AddCommand(addCmd, searchCmd, deleteCmd, editCmd, listCmd, versionCmd)
-
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the version number of p",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("p version %s\n", Version)
+		},
 	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 )
 
 type Prompt struct {
@@ -11,14 +10,6 @@ type Prompt struct {
 	Name   string
 	Prompt string
 	Tags   string
-}
-
-type PromptStore interface {
-	AddPrompt(name, prompt, tags string) error
-	GetPromptByName(name string) (*Prompt, error)
-	UpdatePrompt(name, newPrompt, newTags string) error
-	DeletePrompt(name string) error
-	ListPrompts(tagsFilter string) ([]Prompt, error)
 }
 
 type SQLitePromptStore struct {
@@ -86,24 +77,9 @@ func (s *SQLitePromptStore) DeletePrompt(name string) error {
 	return nil
 }
 
-func (s *SQLitePromptStore) ListPrompts(tagsFilter string) ([]Prompt, error) {
-	query := "SELECT id, name, prompt, tags FROM prompts" // Add 'id'
-	var queryArgs []interface{}
-
-	if tagsFilter != "" {
-		tagList := strings.Split(tagsFilter, ",")
-		query += " WHERE"
-		for i, tag := range tagList {
-			tag = strings.TrimSpace(tag)
-			query += " tags LIKE ?"
-			queryArgs = append(queryArgs, "%"+tag+"%")
-			if i < len(tagList)-1 {
-				query += " OR"
-			}
-		}
-	}
-
-	rows, err := s.db.Query(query, queryArgs...)
+func (s *SQLitePromptStore) ListPrompts() ([]Prompt, error) {
+	query := "SELECT id, name, prompt, tags FROM prompts ORDER BY name"
+	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("error listing prompts: %w", err)
 	}
@@ -112,7 +88,7 @@ func (s *SQLitePromptStore) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	var prompts []Prompt
 	for rows.Next() {
 		var p Prompt
-		if err := rows.Scan(&p.ID, &p.Name, &p.Prompt, &p.Tags); err != nil { // Scan p.ID
+		if err := rows.Scan(&p.ID, &p.Name, &p.Prompt, &p.Tags); err != nil {
 			return nil, fmt.Errorf("error scanning row: %w", err)
 		}
 		prompts = append(prompts, p)
