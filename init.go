@@ -21,6 +21,7 @@ func InitDB() (*sql.DB, error) {
 	}
 
 	appConfigDir := filepath.Join(configDir, appName)
+	// Uses 0700 permissions for the config directory as prompts may contain sensitive data.
 	if err := os.MkdirAll(appConfigDir, 0700); err != nil {
 		return nil, fmt.Errorf("error creating application config directory: %w", err)
 	}

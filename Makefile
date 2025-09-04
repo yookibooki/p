@@ -44,29 +44,29 @@ check-tools:
 	@command -v git >/dev/null || { echo "Warning: git is not installed; version will be set to 'unknown'"; }
 
 ## Format Go code
-fmt: check-tools ## Run go fmt on all packages
+fmt: ## Run go fmt on all packages
 	@$(GO) fmt $(PKG) || { echo "Error: go fmt failed"; exit 1; }
 
 ## Run go vet
-vet: check-tools ## Run go vet on all packages
+vet: ## Run go vet on all packages
 	@$(GO) vet $(PKG) || { echo "Error: go vet failed"; exit 1; }
 
 ## Run static analysis
-lint: check-tools ## Run staticcheck linter
+lint: ## Run staticcheck linter
 	@staticcheck $(PKG) || { echo "Error: staticcheck failed"; exit 1; }
 
 ## Run tests with coverage
-test: check-tools ## Run tests with coverage report
+test: ## Run tests with coverage report
 	@$(GO) test -v -parallel 4 -coverprofile=coverage.out $(PKG) || { echo "Error: tests failed"; exit 1; }
 	@$(GO) tool cover -func=coverage.out
 
 ## Ensure go.mod and go.sum are tidy
-tidy: check-tools ## Run go mod tidy and verify
+tidy: ## Run go mod tidy and verify
 	@$(GO) mod tidy || { echo "Error: go mod tidy failed"; exit 1; }
 	@$(GO) mod verify || { echo "Error: go mod verify failed"; exit 1; }
 
 ## Build binary into $(BIN_DIR)
-build: check-tools ## Build binary with version info
+build: ## Build binary with version info
 	@mkdir -p $(BIN_DIR)
 	@$(GO) build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY) $(PKG) || { echo "Error: build failed"; exit 1; }
 
@@ -77,7 +77,7 @@ release: check-tools fmt vet lint test tidy build ## Full safe build
 check: check-tools fmt vet lint test tidy ## Run all checks without building
 
 ## Install binary to $(INSTALL_DIR)
-install: check-tools release ## Install binary to $(INSTALL_DIR)
+install: release ## Install binary to $(INSTALL_DIR)
 	@mkdir -p $(INSTALL_DIR)
 	@cp -f $(BIN_DIR)/$(BINARY) $(INSTALL_DIR)/ || { echo "Error: installation failed"; exit 1; }
 	@echo "Installed $(BINARY) to $(INSTALL_DIR)"

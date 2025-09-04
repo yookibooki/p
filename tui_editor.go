@@ -16,7 +16,7 @@ import (
 func LaunchExternalEditor(initialContent string) (string, error) {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		defaultEditors := []string{"vim", "nano"} // Easy to add more, like "emacs"
+		defaultEditors := []string{"vim", "nano", "vi"} // Easy to add more, like "emacs"
 		for _, e := range defaultEditors {
 			if path, err := exec.LookPath(e); err == nil {
 				editor = path
@@ -25,7 +25,7 @@ func LaunchExternalEditor(initialContent string) (string, error) {
 		}
 	}
 	if editor == "" {
-		return "", fmt.Errorf("EDITOR environment variable not set and no default editor (vim, nano) found")
+		return "", fmt.Errorf("EDITOR environment variable not set and no default editor (vim, nano, vi) found")
 	}
 
 	tmpfile, err := os.CreateTemp(os.TempDir(), "p-prompt-*.txt")
@@ -116,7 +116,7 @@ func (m editorModel) View() string {
 	)
 }
 
-// RunTUIEditor starts a terminal UI editor and returns the edited content.
+// RunTUIEditor launches the Bubble Tea TUI for editing prompt content.
 func RunTUIEditor(initialContent string) (string, error) {
 	p := tea.NewProgram(initialEditorModel(initialContent))
 

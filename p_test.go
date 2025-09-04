@@ -2,9 +2,10 @@ package main
 
 import (
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
 	"os"
 	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestValidatePromptName(t *testing.T) {
@@ -146,5 +147,98 @@ func TestEditorCancellation(t *testing.T) {
 	err = validatePromptContent("   \n\t  ")
 	if err == nil {
 		t.Error("Expected error for whitespace-only content, got nil")
+	}
+}
+
+func setupMockEditor(t *testing.T) {
+	mockScript := `#!/bin/bash
+echo "test content" > "$1"
+`
+	mockFile, err := os.CreateTemp("", "mock_editor_*.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mockFile.Close()
+
+	if _, err := mockFile.WriteString(mockScript); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(mockFile.Name(), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	os.Setenv("EDITOR", mockFile.Name())
+	t.Cleanup(func() {
+		os.Remove(mockFile.Name())
+		os.Unsetenv("EDITOR")
+	})
+}
+
+func TestAddPromptIntegration(t *testing.T) {
+	store := setupTestDB(t)
+	app := NewApp(store)
+	setupMockEditor(t)
+
+	// Test adding a prompt using external editor
+	err := app.AddPrompt("testprompt", "test,cli", true)
+	if err != nil {
+		t.Errorf("AddPrompt failed: %v", err)
+	}
+
+	// Verify prompt was added
+	prompt, err := store.GetPromptByName("testprompt")
+	if err != nil {
+		t.Errorf("Failed to retrieve added prompt: %v", err)
+	}
+	if prompt.Name != "testprompt" {
+		t.Errorf("Expected prompt name 'testprompt', got '%s'", prompt.Name)
+	}
+}
+
+func TestListPromptsWithTags(t *testing.T) {
+	store := setupTestDB(t)
+	app := NewApp(store)
+
+	// Add test prompts
+	err := store.AddPrompt("test1", "content1", "tag1,tag2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = store.AddPrompt("test2", "content2", "tag2,tag3")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test filtering by tags
+	prompts, err := app.ListPrompts("tag2")
+	if err != nil {
+		t.Errorf("ListPrompts with tags failed: %v", err)
+	}
+	if len(prompts) != 2 {
+		t.Errorf("Expected 2 prompts with tag2, got %d", len(prompts))
+	}
+}
+
+func TestDeletePromptIntegration(t *testing.T) {
+	store := setupTestDB(t)
+	app := NewApp(store)
+
+	// Add a test prompt
+	err := store.AddPrompt("testdelete", "test content", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete the prompt
+	err = app.DeletePrompt("testdelete")
+	if err != nil {
+		t.Errorf("DeletePrompt failed: %v", err)
+	}
+
+	// Verify prompt was deleted
+	_, err = store.GetPromptByName("testdelete")
+	if err == nil {
+		t.Error("Expected error when retrieving deleted prompt, got nil")
 	}
 }

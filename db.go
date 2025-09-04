@@ -22,6 +22,7 @@ func NewSQLitePromptStore(db *sql.DB) *SQLitePromptStore {
 	return &SQLitePromptStore{db: db}
 }
 
+// AddPrompt inserts a new prompt into the database.
 func (s *SQLitePromptStore) AddPrompt(name, prompt, tags string) error {
 	query := "INSERT INTO prompts (name, prompt, tags) VALUES (?, ?, ?)"
 	_, err := s.db.Exec(query, name, prompt, tags)
@@ -34,6 +35,7 @@ func (s *SQLitePromptStore) AddPrompt(name, prompt, tags string) error {
 	return nil
 }
 
+// GetPromptByName retrieves a prompt by its name from the database.
 func (s *SQLitePromptStore) GetPromptByName(name string) (*Prompt, error) {
 	query := "SELECT id, name, prompt, tags FROM prompts WHERE name = ?"
 	row := s.db.QueryRow(query, name)
@@ -48,6 +50,7 @@ func (s *SQLitePromptStore) GetPromptByName(name string) (*Prompt, error) {
 	return &p, nil
 }
 
+// UpdatePrompt modifies an existing prompt's content and tags in the database.
 func (s *SQLitePromptStore) UpdatePrompt(name, newPrompt, newTags string) error {
 	query := "UPDATE prompts SET prompt = ?, tags = ? WHERE name = ?"
 	result, err := s.db.Exec(query, newPrompt, newTags, name)
@@ -66,6 +69,7 @@ func (s *SQLitePromptStore) UpdatePrompt(name, newPrompt, newTags string) error 
 	return nil
 }
 
+// DeletePrompt removes a prompt from the database by name.
 func (s *SQLitePromptStore) DeletePrompt(name string) error {
 	query := "DELETE FROM prompts WHERE name = ?"
 	result, err := s.db.Exec(query, name)
@@ -82,11 +86,32 @@ func (s *SQLitePromptStore) DeletePrompt(name string) error {
 	return nil
 }
 
+// ListPrompts retrieves all prompts from the database.
 func (s *SQLitePromptStore) ListPrompts() ([]Prompt, error) {
 	query := "SELECT id, name, prompt, tags FROM prompts ORDER BY name"
 	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("error listing prompts: %w", err)
+	}
+	defer rows.Close()
+
+	var prompts []Prompt
+	for rows.Next() {
+		var p Prompt
+		if err := rows.Scan(&p.ID, &p.Name, &p.Prompt, &p.Tags); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		prompts = append(prompts, p)
+	}
+	return prompts, nil
+}
+
+// ListPromptsByTags retrieves prompts filtered by tags using SQL LIKE query.
+func (s *SQLitePromptStore) ListPromptsByTags(tags string) ([]Prompt, error) {
+	query := "SELECT id, name, prompt, tags FROM prompts WHERE tags LIKE '%' || ? || '%' ORDER BY name"
+	rows, err := s.db.Query(query, tags)
+	if err != nil {
+		return nil, fmt.Errorf("error listing prompts by tags: %w", err)
 	}
 	defer rows.Close()
 

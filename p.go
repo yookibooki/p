@@ -17,21 +17,25 @@ const (
 	MaxPromptContentLen = 10000
 )
 
+// toTagSet splits, trims, and deduplicates tags into a set.
+func toTagSet(tags string) map[string]struct{} {
+	tagSet := make(map[string]struct{})
+	for _, tag := range strings.Split(tags, ",") {
+		if trimmed := strings.TrimSpace(tag); trimmed != "" {
+			tagSet[trimmed] = struct{}{}
+		}
+	}
+	return tagSet
+}
+
 // normalizeTags deduplicates and sorts comma-separated tags, trimming whitespace.
 func normalizeTags(tags string) string {
 	if tags == "" {
 		return ""
 	}
-
-	tagMap := make(map[string]struct{})
-	for _, tag := range strings.Split(tags, ",") {
-		if trimmed := strings.TrimSpace(tag); trimmed != "" {
-			tagMap[trimmed] = struct{}{}
-		}
-	}
-
+	tagSet := toTagSet(tags)
 	var result []string
-	for tag := range tagMap {
+	for tag := range tagSet {
 		result = append(result, tag)
 	}
 	sort.Strings(result)
@@ -152,38 +156,15 @@ func (a *App) EditPrompt(name, newPrompt, newTags string) error {
 }
 
 // ListPrompts retrieves all prompts, optionally filtered by tags.
-// Note: Tag filtering is done in-memory for simplicity, acceptable for low-volume use.
+// In-memory filtering replaced with SQL for efficiency; retained for simplicity in small datasets.
 func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
-	prompts, err := a.promptStore.ListPrompts()
-	if err != nil {
-		return nil, fmt.Errorf("error listing prompts: %w", err)
+	if tagsFilter != "" {
+		return a.promptStore.ListPromptsByTags(tagsFilter)
 	}
-
-	if tagsFilter == "" {
-		return prompts, nil
-	}
-
-	normalizedFilter := normalizeTags(tagsFilter)
-	filterTags := map[string]struct{}{}
-	for _, t := range strings.Split(normalizedFilter, ",") {
-		filterTags[t] = struct{}{}
-	}
-
-	var filteredPrompts []Prompt
-	for _, p := range prompts {
-		promptTags := strings.Split(normalizeTags(p.Tags), ",")
-		for _, pt := range promptTags {
-			if _, ok := filterTags[pt]; ok {
-				filteredPrompts = append(filteredPrompts, p)
-				break
-			}
-		}
-	}
-
-	return filteredPrompts, nil
+	return a.promptStore.ListPrompts()
 }
 
-// printPrompt displays a prompt's details in a formatted output.
+// printPrompt formats and prints a Prompt struct to stdout.
 func printPrompt(p Prompt) {
 	fmt.Printf("Name: %s\n", p.Name)
 	fmt.Printf("Prompt: %s\n", p.Prompt)
@@ -213,10 +194,8 @@ func getAllTags(app *App) []string {
 	tagSet := make(map[string]struct{})
 	for _, p := range prompts {
 		if p.Tags != "" {
-			for _, tag := range strings.Split(p.Tags, ",") {
-				if trimmed := strings.TrimSpace(tag); trimmed != "" {
-					tagSet[trimmed] = struct{}{}
-				}
+			for tag := range toTagSet(p.Tags) {
+				tagSet[tag] = struct{}{}
 			}
 		}
 	}
@@ -292,6 +271,7 @@ func newAddCmd(app *App) *cobra.Command {
 	return cmd
 }
 
+// Uses go-fuzzyfinder for enhanced UX in interactive prompt search; stdlib filtering could suffice for simpler needs.
 func newSearchCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "search",

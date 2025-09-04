@@ -2,6 +2,5 @@ repomix-output.md
 p
 bin/
 vendor/
-*.test
-*.out
+coverage.out
 .vscode/
