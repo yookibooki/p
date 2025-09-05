@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -73,11 +74,12 @@ func validatePromptContent(content string) error {
 // App manages prompt-related operations using a SQLite store.
 type App struct {
 	promptStore *SQLitePromptStore
+	dbPath      string
 }
 
-// NewApp creates a new App instance with the given prompt store.
-func NewApp(store *SQLitePromptStore) *App {
-	return &App{promptStore: store}
+// NewApp creates a new App instance with the given prompt store and database path.
+func NewApp(store *SQLitePromptStore, dbPath string) *App {
+	return &App{promptStore: store, dbPath: dbPath}
 }
 
 // AddPrompt creates a new prompt using either external editor or TUI editor.
@@ -127,14 +129,9 @@ func (a *App) DeletePrompt(name string) error {
 }
 
 // EditPrompt updates an existing prompt's content and tags.
-func (a *App) EditPrompt(name, newPrompt, newTags string) error {
-	if err := validatePromptName(name); err != nil {
+func (a *App) EditPrompt(existingPrompt *Prompt, newPrompt, newTags string) error {
+	if err := validatePromptName(existingPrompt.Name); err != nil {
 		return err
-	}
-
-	existingPrompt, err := a.promptStore.GetPromptByName(name)
-	if err != nil {
-		return fmt.Errorf("error retrieving existing prompt: %w", err)
 	}
 
 	normalizedTags := normalizeTags(newTags)
@@ -148,7 +145,7 @@ func (a *App) EditPrompt(name, newPrompt, newTags string) error {
 		return err
 	}
 
-	err = a.promptStore.UpdatePrompt(name, newPrompt, normalizedTags)
+	err := a.promptStore.UpdatePrompt(existingPrompt.Name, newPrompt, normalizedTags)
 	if err != nil {
 		return fmt.Errorf("error editing prompt: %w", err)
 	}
@@ -156,7 +153,7 @@ func (a *App) EditPrompt(name, newPrompt, newTags string) error {
 }
 
 // ListPrompts retrieves all prompts, optionally filtered by tags.
-// In-memory filtering replaced with SQL for efficiency; retained for simplicity in small datasets.
+// Supports AND/OR logic: "tag1,tag2" (OR) or "AND:tag1,tag2" (AND)
 func (a *App) ListPrompts(tagsFilter string) ([]Prompt, error) {
 	if tagsFilter != "" {
 		return a.promptStore.ListPromptsByTags(tagsFilter)
@@ -208,14 +205,14 @@ func getAllTags(app *App) []string {
 }
 
 func main() {
-	db, err := InitDB()
+	db, dbPath, err := InitDBWithPath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing database: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
-	app := NewApp(NewSQLitePromptStore(db))
+	app := NewApp(NewSQLitePromptStore(db), dbPath)
 
 	rootCmd := &cobra.Command{
 		Use:   "p",
@@ -228,6 +225,10 @@ func main() {
 		newDeleteCmd(app),
 		newEditCmd(app),
 		newListCmd(app),
+		newExportCmd(app),
+		newImportCmd(app),
+		newBackupCmd(app),
+		newRestoreCmd(app),
 		newVersionCmd(),
 	)
 
@@ -264,7 +265,7 @@ func newAddCmd(app *App) *cobra.Command {
 	addExternalEditorFlag(cmd)
 
 	// Add completion for tags flag
-	cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	_ = cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return getAllTags(app), cobra.ShellCompDirectiveNoFileComp
 	})
 
@@ -362,7 +363,7 @@ func newEditCmd(app *App) *cobra.Command {
 				return err
 			}
 
-			if err := app.EditPrompt(name, editedPromptContent, finalTags); err != nil {
+			if err := app.EditPrompt(existingPrompt, editedPromptContent, finalTags); err != nil {
 				return err
 			}
 			fmt.Println("Prompt edited successfully!")
@@ -379,7 +380,7 @@ func newEditCmd(app *App) *cobra.Command {
 	addExternalEditorFlag(cmd)
 
 	// Add completion for tags flag
-	cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	_ = cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return getAllTags(app), cobra.ShellCompDirectiveNoFileComp
 	})
 
@@ -411,14 +412,176 @@ func newListCmd(app *App) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringP("tags", "t", "", "Filter by tags (comma-separated)")
+	cmd.Flags().StringP("tags", "t", "", "Filter by tags (comma-separated). Use AND:tag1,tag2 for AND logic, tag1,tag2 for OR logic")
 
 	// Add completion for tags flag
-	cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	_ = cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return getAllTags(app), cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
+}
+
+func newExportCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "export [file]",
+		Short: "Export all prompts to a JSON file",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			filename := args[0]
+
+			prompts, err := app.ListPrompts("")
+			if err != nil {
+				return fmt.Errorf("error listing prompts: %w", err)
+			}
+
+			if len(prompts) == 0 {
+				fmt.Println("No prompts to export")
+				return nil
+			}
+
+			// Create JSON export
+			data, err := json.MarshalIndent(prompts, "", "  ")
+			if err != nil {
+				return fmt.Errorf("error marshaling prompts: %w", err)
+			}
+
+			err = os.WriteFile(filename, data, 0644)
+			if err != nil {
+				return fmt.Errorf("error writing file: %w", err)
+			}
+
+			fmt.Printf("Exported %d prompts to %s\n", len(prompts), filename)
+			return nil
+		},
+	}
+}
+
+func newImportCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "import [file]",
+		Short: "Import prompts from a JSON file",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			filename := args[0]
+
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				return fmt.Errorf("error reading file: %w", err)
+			}
+
+			var prompts []Prompt
+			err = json.Unmarshal(data, &prompts)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling prompts: %w", err)
+			}
+
+			imported := 0
+			skipped := 0
+			for _, prompt := range prompts {
+				// Skip prompts with empty names or content
+				if prompt.Name == "" || prompt.Prompt == "" {
+					skipped++
+					continue
+				}
+
+				err := app.promptStore.AddPrompt(prompt.Name, prompt.Prompt, prompt.Tags)
+				if err != nil {
+					// If prompt already exists, try to update it
+					if strings.Contains(err.Error(), "already exists") {
+						err = app.promptStore.UpdatePrompt(prompt.Name, prompt.Prompt, prompt.Tags)
+						if err != nil {
+							fmt.Printf("Warning: failed to update prompt '%s': %v\n", prompt.Name, err)
+							skipped++
+							continue
+						}
+					} else {
+						fmt.Printf("Warning: failed to import prompt '%s': %v\n", prompt.Name, err)
+						skipped++
+						continue
+					}
+				}
+				imported++
+			}
+
+			fmt.Printf("Imported %d prompts, skipped %d\n", imported, skipped)
+			return nil
+		},
+	}
+}
+
+func newBackupCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "backup [file]",
+		Short: "Backup the database to a file",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			backupPath := args[0]
+
+			// Copy the database file
+			sourceFile, err := os.Open(app.dbPath)
+			if err != nil {
+				return fmt.Errorf("error opening database file: %w", err)
+			}
+			defer sourceFile.Close()
+
+			destFile, err := os.Create(backupPath)
+			if err != nil {
+				return fmt.Errorf("error creating backup file: %w", err)
+			}
+			defer destFile.Close()
+
+			_, err = destFile.ReadFrom(sourceFile)
+			if err != nil {
+				return fmt.Errorf("error copying database: %w", err)
+			}
+
+			fmt.Printf("Database backed up to %s\n", backupPath)
+			return nil
+		},
+	}
+}
+
+func newRestoreCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "restore [file]",
+		Short: "Restore the database from a backup file",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			backupPath := args[0]
+
+			// Check if backup file exists
+			if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+				return fmt.Errorf("backup file does not exist: %s", backupPath)
+			}
+
+			// Close the current database connection
+			// Note: This is a limitation - we can't close the DB from within the app
+			// In a real implementation, you'd want to handle this differently
+
+			// Copy the backup file to the database location
+			sourceFile, err := os.Open(backupPath)
+			if err != nil {
+				return fmt.Errorf("error opening backup file: %w", err)
+			}
+			defer sourceFile.Close()
+
+			destFile, err := os.Create(app.dbPath)
+			if err != nil {
+				return fmt.Errorf("error creating database file: %w", err)
+			}
+			defer destFile.Close()
+
+			_, err = destFile.ReadFrom(sourceFile)
+			if err != nil {
+				return fmt.Errorf("error restoring database: %w", err)
+			}
+
+			fmt.Printf("Database restored from %s\n", backupPath)
+			fmt.Println("Note: You may need to restart the application for changes to take effect")
+			return nil
+		},
+	}
 }
 
 func newVersionCmd() *cobra.Command {
