@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"os"
 	"testing"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestValidatePromptName(t *testing.T) {
@@ -77,7 +75,7 @@ func TestNormalizeTags(t *testing.T) {
 	}
 }
 
-func setupTestDB(t *testing.T) *SQLitePromptStore {
+func setupTestDB(t *testing.T) (*SQLitePromptStore, string) {
 	tmpFile, err := os.CreateTemp("", "test_*.db")
 	if err != nil {
 		t.Fatal(err)
@@ -103,12 +101,12 @@ func setupTestDB(t *testing.T) *SQLitePromptStore {
 
 	store := NewSQLitePromptStore(db)
 	t.Cleanup(func() { db.Close() })
-	return store
+	return store, tmpFile.Name()
 }
 
 func TestAppWithEmptyDB(t *testing.T) {
-	store := setupTestDB(t)
-	app := NewApp(store)
+	store, dbPath := setupTestDB(t)
+	app := NewApp(store, dbPath)
 
 	// Test listing empty DB
 	prompts, err := app.ListPrompts("")
@@ -121,7 +119,7 @@ func TestAppWithEmptyDB(t *testing.T) {
 }
 
 func TestDuplicateNames(t *testing.T) {
-	store := setupTestDB(t)
+	store, _ := setupTestDB(t)
 
 	// Add first prompt
 	err := store.AddPrompt("test", "content1", "tag1")
@@ -164,7 +162,7 @@ echo "test content" > "$1"
 		t.Fatal(err)
 	}
 
-	if err := os.Chmod(mockFile.Name(), 0755); err != nil {
+	if err := os.Chmod(mockFile.Name(), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -176,8 +174,8 @@ echo "test content" > "$1"
 }
 
 func TestAddPromptIntegration(t *testing.T) {
-	store := setupTestDB(t)
-	app := NewApp(store)
+	store, dbPath := setupTestDB(t)
+	app := NewApp(store, dbPath)
 	setupMockEditor(t)
 
 	// Test adding a prompt using external editor
@@ -197,8 +195,8 @@ func TestAddPromptIntegration(t *testing.T) {
 }
 
 func TestListPromptsWithTags(t *testing.T) {
-	store := setupTestDB(t)
-	app := NewApp(store)
+	store, dbPath := setupTestDB(t)
+	app := NewApp(store, dbPath)
 
 	// Add test prompts
 	err := store.AddPrompt("test1", "content1", "tag1,tag2")
@@ -221,8 +219,8 @@ func TestListPromptsWithTags(t *testing.T) {
 }
 
 func TestDeletePromptIntegration(t *testing.T) {
-	store := setupTestDB(t)
-	app := NewApp(store)
+	store, dbPath := setupTestDB(t)
+	app := NewApp(store, dbPath)
 
 	// Add a test prompt
 	err := store.AddPrompt("testdelete", "test content", "test")
@@ -238,6 +236,76 @@ func TestDeletePromptIntegration(t *testing.T) {
 
 	// Verify prompt was deleted
 	_, err = store.GetPromptByName("testdelete")
+	if err == nil {
+		t.Error("Expected error when retrieving deleted prompt, got nil")
+	}
+}
+
+func TestCLIWorkflowIntegration(t *testing.T) {
+	store, dbPath := setupTestDB(t)
+	app := NewApp(store, dbPath)
+
+	// Test full workflow: add, list, edit, delete
+
+	// Add a prompt directly to store (since AddPrompt requires editor interaction)
+	err := store.AddPrompt("workflow-test", "initial content", "workflow,test")
+	if err != nil {
+		t.Fatalf("Failed to add prompt: %v", err)
+	}
+
+	// List all prompts
+	prompts, err := app.ListPrompts("")
+	if err != nil {
+		t.Fatalf("Failed to list prompts: %v", err)
+	}
+	if len(prompts) != 1 {
+		t.Errorf("Expected 1 prompt, got %d", len(prompts))
+	}
+
+	// List with tag filter (OR logic)
+	prompts, err = app.ListPrompts("workflow")
+	if err != nil {
+		t.Fatalf("Failed to list prompts with tag filter: %v", err)
+	}
+	if len(prompts) != 1 {
+		t.Errorf("Expected 1 prompt with workflow tag, got %d", len(prompts))
+	}
+
+	// List with AND logic
+	prompts, err = app.ListPrompts("AND:workflow,test")
+	if err != nil {
+		t.Fatalf("Failed to list prompts with AND logic: %v", err)
+	}
+	if len(prompts) != 1 {
+		t.Errorf("Expected 1 prompt with both tags, got %d", len(prompts))
+	}
+
+	// Edit the prompt
+	err = app.EditPrompt(&prompts[0], "updated content", "workflow,updated")
+	if err != nil {
+		t.Fatalf("Failed to edit prompt: %v", err)
+	}
+
+	// Verify edit
+	updatedPrompt, err := store.GetPromptByName("workflow-test")
+	if err != nil {
+		t.Fatalf("Failed to get updated prompt: %v", err)
+	}
+	if updatedPrompt.Prompt != "updated content" {
+		t.Errorf("Expected updated content, got %s", updatedPrompt.Prompt)
+	}
+	if updatedPrompt.Tags != "updated,workflow" { // normalized order
+		t.Errorf("Expected updated tags, got %s", updatedPrompt.Tags)
+	}
+
+	// Delete the prompt
+	err = app.DeletePrompt("workflow-test")
+	if err != nil {
+		t.Fatalf("Failed to delete prompt: %v", err)
+	}
+
+	// Verify deletion
+	_, err = store.GetPromptByName("workflow-test")
 	if err == nil {
 		t.Error("Expected error when retrieving deleted prompt, got nil")
 	}

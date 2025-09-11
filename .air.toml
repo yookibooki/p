@@ -1,0 +1,55 @@
+# ..............................................................................
+# .air.toml
+#
+# Configuration for Air live-reloading.
+# Used by the `make dev` target.
+# https://github.com/air-verse/air
+# ..............................................................................
+
+# The working directory for the project.
+root = "."
+# A temporary directory for Air's build artifacts.
+tmp_dir = "tmp"
+
+[build]
+# Command to build the application.
+# Builds the binary `p` inside the `tmp/` directory.
+cmd = "go build -o ./tmp/p ."
+
+# The binary that Air should execute after a successful build.
+bin = "tmp/p"
+
+# A list of file extensions to watch.
+include_ext = ["go", "tpl", "tmpl", "html", "css", "env"]
+
+# Directories to exclude from watching.
+# Crucially excludes tmp_dir to prevent infinite reload loops.
+exclude_dir = ["assets", "tmp", "bin", "vendor"]
+
+# Exclude regex patterns for finer control (e.g., ignore test files).
+exclude_regex = ["_test\\.go$"]
+
+# Command to execute after a successful build and before running the binary.
+# Useful for tasks like migrations or asset bundling.
+# post_cmd = ["echo 'Build successful! Running migrations...' && ./tmp/p migrate"]
+
+# Log file for the build process.
+log = "air_build.log"
+
+# Delay in milliseconds before triggering a reload after a file change.
+delay = 1000 # 1s
+
+[log]
+# Show the timestamp in logs.
+time = true
+
+[color]
+# Customize colors for different parts of Air's output.
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+# Delete the temporary directory on exit.
+clean_on_exit = true

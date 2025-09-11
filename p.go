@@ -446,7 +446,7 @@ func newExportCmd(app *App) *cobra.Command {
 				return fmt.Errorf("error marshaling prompts: %w", err)
 			}
 
-			err = os.WriteFile(filename, data, 0644)
+			err = os.WriteFile(filename, data, 0o644)
 			if err != nil {
 				return fmt.Errorf("error writing file: %w", err)
 			}
