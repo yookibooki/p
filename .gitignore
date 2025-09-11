@@ -1,9 +1,0 @@
-repomix-output.md
-p
-bin/
-vendor/
-coverage.out
-.vscode/
-
-.*
-gha-creds-*.json
